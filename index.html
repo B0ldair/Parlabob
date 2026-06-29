@@ -51,8 +51,8 @@ window.CONFIG = {
   ADMIN_NAME: "Bob",
   ADMIN_CODE: "197314",              
   SUPABASE_URL: "https://ufxmpazbsydmxdlclfnn.supabase.co/rest/v1/",     
-  SUPABASE_ANON_KEY: "sb_secret_Tw7ueLUgHpBNMqibirqwHA_wmpi97Ay"   };
-</script></script>
+  SUPABASE_ANON_KEY: "sb_secret_Tw7ueLUgHpBNMqibirqwHA_wmpi97Ay"};
+</script>
 
 <script>
 "use strict";
@@ -96,13 +96,33 @@ function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
    COUCHE DONNÃ‰ES
    ============================================================ */
 var _mem = [];
+var LAST_DB_ERROR = null;            // derniÃ¨re erreur Supabase, pour l'afficher Ã  l'Ã©cran
+var _errListeners = [];
+function setDbError(e){
+  LAST_DB_ERROR = e ? (e.message || e.hint || e.details || JSON.stringify(e)) : null;
+  _errListeners.forEach(function(fn){ try { fn(LAST_DB_ERROR); } catch(x){} });
+}
+function onDbError(fn){ _errListeners.push(fn); return function(){ _errListeners=_errListeners.filter(function(f){return f!==fn;}); }; }
+
 function dbInsert(msg){
   if(!SB_READY){ _mem.push(msg); return Promise.resolve(); }
-  return sb.from("messages").insert({ thread_id:msg.thread_id, thread_name:msg.thread_name, sender:msg.sender, text:msg.text });
+  return sb.from("messages").insert({ thread_id:msg.thread_id, thread_name:msg.thread_name, sender:msg.sender, text:msg.text })
+    .then(function(r){
+      if(r && r.error){ setDbError(r.error); console.error("Supabase insert:", r.error); }
+      else { setDbError(null); }
+      return r;
+    })
+    .catch(function(e){ setDbError(e); console.error("Supabase insert (catch):", e); });
 }
 function dbAllForThread(threadId){
   if(!SB_READY){ return Promise.resolve(_mem.filter(function(m){return m.thread_id===threadId;}).sort(function(a,b){return tsOf(a)-tsOf(b);})); }
-  return sb.from("messages").select("*").eq("thread_id",threadId).order("created_at",{ascending:true}).then(function(r){ return r.data||[]; });
+  return sb.from("messages").select("*").eq("thread_id",threadId).order("created_at",{ascending:true})
+    .then(function(r){
+      if(r && r.error){ setDbError(r.error); console.error("Supabase select:", r.error); return []; }
+      setDbError(null);
+      return r.data||[];
+    })
+    .catch(function(e){ setDbError(e); console.error("Supabase select (catch):", e); return []; });
 }
 function groupThreads(rows){
   var map={};
@@ -114,7 +134,13 @@ function groupThreads(rows){
 }
 function dbThreads(){
   if(!SB_READY){ return Promise.resolve(groupThreads(_mem.slice())); }
-  return sb.from("messages").select("*").order("created_at",{ascending:true}).then(function(r){ return groupThreads(r.data||[]); });
+  return sb.from("messages").select("*").order("created_at",{ascending:true})
+    .then(function(r){
+      if(r && r.error){ setDbError(r.error); console.error("Supabase threads:", r.error); return []; }
+      setDbError(null);
+      return groupThreads(r.data||[]);
+    })
+    .catch(function(e){ setDbError(e); console.error("Supabase threads (catch):", e); return []; });
 }
 function tsOf(m){ return m.created_at ? new Date(m.created_at).getTime() : (m._t || Date.now()); }
 
@@ -360,6 +386,7 @@ function AdminApp(props){
   var list = h("div",{ style:mix(bevelIn,{width:210,minWidth:140,background:C.white,display:"flex",flexDirection:"column",fontFamily:sysFont}) },
     h("div",{ style:{background:"linear-gradient(90deg,"+C.titleA+","+C.titleB+")",color:"#fff",fontSize:11,fontWeight:700,padding:"3px 6px"} }, "En ligne ("+threads.length+")"),
     h("div",{ style:{flex:1,overflowY:"auto"} },
+      h(DbErrorBanner,null),
       threads.length===0 ? h("div",{ style:{padding:12,fontSize:12,color:C.shadow,textAlign:"center"} }, "Personne pour l'instant.") : null,
       threads.map(function(t){
         var last=t.messages[t.messages.length-1], isA=t.thread_id===activeId;
@@ -391,21 +418,42 @@ function AdminApp(props){
   );
 }
 
+/* BanniÃ¨re d'erreur Supabase, visible Ã  l'Ã©cran */
+function DbErrorBanner(){
+  var st=useState(LAST_DB_ERROR), msg=st[0], setMsg=st[1];
+  useEffect(function(){ return onDbError(setMsg); },[]);
+  if(!msg) return null;
+  return h("div",{ style:{background:"#FFF3CD",border:"2px solid #B00",color:"#7A0000",fontFamily:sysFont,fontSize:12,lineHeight:1.45,padding:"8px 10px",margin:"0 0 10px",textAlign:"left",wordBreak:"break-word"} },
+    h("b",null,"ProblÃ¨me avec la base : "),
+    msg,
+    h("div",{ style:{marginTop:6,color:"#555"} }, "Astuce : si le message parle de \"row-level security\" ou \"policy\", relance le script SQL (Ã©tape 1). S'il parle de \"relation\"/\"table\", la table n'existe pas. S'il parle de \"JWT\"/\"apikey\"/\"Invalid\", la clÃ© ou l'URL est incorrecte.")
+  );
+}
+
+/* Auto-test : au chargement, vÃ©rifie qu'on peut lire la table */
+function selfTest(){
+  if(!SB_READY) return;
+  sb.from("messages").select("id").limit(1).then(function(r){
+    if(r && r.error){ setDbError(r.error); console.error("Self-test:", r.error); }
+  }).catch(function(e){ setDbError(e); });
+}
+
 /* ============================================================
    ACCUEIL + LAYOUT
    ============================================================ */
 function Home(props){
   var go=props.go;
   return h(Center,null,
-    h(Win,{ title:"Parler Ã  "+ADMIN_NAME, online:true, style:{width:340,maxWidth:"100%"} },
+    h(Win,{ title:"Parler Ã  "+ADMIN_NAME, online:true, style:{width:360,maxWidth:"100%"} },
       h("div",{ style:{padding:"20px 18px",textAlign:"center",fontFamily:sysFont} },
         h(Buddy,{size:60}),
         h("div",{ style:{fontSize:19,fontWeight:700,color:C.msnBlue,margin:"8px 0 16px",textShadow:"1px 1px 0 #fff"} }, "Messagerie anonyme"),
+        h(DbErrorBanner,null),
         h("div",{ style:{display:"flex",flexDirection:"column",gap:8} },
           h(Btn,{ primary:true, full:true, onClick:function(){go("visitor");}, style:{padding:"9px"} }, "âœ‰ Ã‰crire Ã  "+ADMIN_NAME),
           h(Btn,{ full:true, onClick:function(){go("admin");}, style:{padding:"9px"} }, "ðŸ”‘ Je suis "+ADMIN_NAME)
         ),
-        !SB_READY ? h("div",{ style:{fontSize:10.5,color:"#B00",marginTop:14,lineHeight:1.4} }, "âš  Supabase non configurÃ© : mode local seulement. Voir README.md.") : null
+        !SB_READY ? h("div",{ style:{fontSize:11,color:"#B00",marginTop:14,lineHeight:1.4} }, "âš  Supabase non configurÃ© : les messages ne sont ni enregistrÃ©s ni partagÃ©s. Remplis les clÃ©s dans window.CONFIG (voir README).") : null
       )
     )
   );
@@ -420,6 +468,7 @@ function Clock(){
 }
 function App(){
   var st=useState("home"), view=st[0], setView=st[1];
+  useEffect(function(){ selfTest(); },[]);
   function go(v){ setView(v); }
   return h("div",{ style:{height:"100vh",width:"100%",display:"flex",flexDirection:"column",background:"repeating-linear-gradient(45deg,#0a7d7d 0 14px,#0b8585 14px 28px), #0a7d7d",overflow:"hidden"} },
     view==="home" ? h(Home,{ go:go }) : null,
