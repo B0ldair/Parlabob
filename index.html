@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Parler à Bob — Messagerie anonyme</title>
+<title>Parler Ã  Bob â€” Messagerie anonyme</title>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
   #root { height: 100vh; }
@@ -13,20 +13,34 @@
   ::-webkit-scrollbar-thumb { background: #C0C0C0; border: 2px solid #fff; border-right-color:#808080; border-bottom-color:#808080; }
   textarea::placeholder, input::placeholder { color: #808080; }
 </style>
-<!-- React + Babel via CDN : aucun build nécessaire, GitHub Pages sert ce fichier tel quel -->
+<!-- React seul (PAS de Babel) : le fichier ne contient que du JavaScript standard,
+     GitHub Pages le sert tel quel, aucune transformation au chargement. -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<!-- Client Supabase (base de données partagée) -->
+<!-- Client Supabase (base de donnÃ©es partagÃ©e) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div id="root"></div>
 
+<!-- Filet de sÃ©curitÃ© : affiche toute erreur Ã  l'Ã©cran au lieu d'une page blanche -->
+<script>
+window.addEventListener("error", function (e) {
+  var r = document.getElementById("root");
+  if (r && !r.dataset.mounted) {
+    r.innerHTML =
+      '<div style="font-family:Tahoma,sans-serif;background:#ECE9D8;border:2px solid #808080;margin:30px;padding:16px;color:#000">'
+      + '<b style="color:#B00">Une erreur a emp&ecirc;ch&eacute; le chargement :</b><br><br>'
+      + '<code style="font-size:12px">' + (e.message || e.error || "Erreur inconnue") + '</code>'
+      + '<br><br>V&eacute;rifie ta connexion internet (les biblioth&egrave;ques se chargent depuis un CDN), '
+      + 'puis recharge la page avec Ctrl+Maj+R.</div>';
+  }
+});
+</script>
+
 <script>
 /* ============================================================
-   CONFIGURATION — À REMPLIR (voir README.md, étape Supabase)
-   Colle ici les 2 valeurs de ton projet Supabase.
+   CONFIGURATION â€” Ã€ REMPLIR (voir README.md, Ã©tape Supabase)
    ============================================================ */
 window.CONFIG = {
   ADMIN_NAME: "Bob",
@@ -36,79 +50,79 @@ window.CONFIG = {
 };
 </script>
 
-<script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useCallback } = React;
-const CFG = window.CONFIG;
-const ADMIN_NAME = CFG.ADMIN_NAME;
-const ADMIN_CODE = CFG.ADMIN_CODE;
-const POLL_MS = 2000;
+<script>
+"use strict";
+/* ============================================================
+   Tout en JavaScript standard. Le JSX est remplacÃ© par la
+   fonction h() (hyperscript) = React.createElement.
+   ============================================================ */
+var h = React.createElement;
+var useState = React.useState, useEffect = React.useEffect,
+    useRef = React.useRef, useCallback = React.useCallback,
+    Fragment = React.Fragment;
 
-/* ---- Connexion Supabase, ou repli local si non configuré ---- */
-const SB_READY = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY;
-const sb = SB_READY ? supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
+var CFG = window.CONFIG;
+var ADMIN_NAME = CFG.ADMIN_NAME;
+var ADMIN_CODE = CFG.ADMIN_CODE;
+var POLL_MS = 2000;
+
+/* ---- Connexion Supabase, ou repli local si non configurÃ© ---- */
+var SB_READY = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY);
+var sb = SB_READY ? supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
 
 /* ---- Tokens "vieux internet" (MSN / Win98) ---- */
-const C = {
+var C = {
   silver:"#C0C0C0", face:"#ECE9D8", titleA:"#0A246A", titleB:"#3A8BE8",
   green:"#2FAE45", white:"#FFFFFF", shadow:"#808080", dark:"#404040",
-  ink:"#000000", field:"#FFFFFF", msnBlue:"#1B5FA8",
+  ink:"#000000", field:"#FFFFFF", msnBlue:"#1B5FA8"
 };
-const bevelOut = { borderTop:`2px solid ${C.white}`, borderLeft:`2px solid ${C.white}`, borderRight:`2px solid ${C.shadow}`, borderBottom:`2px solid ${C.shadow}` };
-const bevelIn  = { borderTop:`2px solid ${C.shadow}`, borderLeft:`2px solid ${C.shadow}`, borderRight:`2px solid ${C.white}`, borderBottom:`2px solid ${C.white}` };
-const sysFont = "'Tahoma','MS Sans Serif',Geneva,sans-serif";
+var bevelOut = { borderTop:"2px solid "+C.white, borderLeft:"2px solid "+C.white, borderRight:"2px solid "+C.shadow, borderBottom:"2px solid "+C.shadow };
+var bevelIn  = { borderTop:"2px solid "+C.shadow, borderLeft:"2px solid "+C.shadow, borderRight:"2px solid "+C.white, borderBottom:"2px solid "+C.white };
+var sysFont = "'Tahoma','MS Sans Serif',Geneva,sans-serif";
+function mix(){ var o={},i,k; for(i=0;i<arguments.length;i++){ var s=arguments[i]; if(s) for(k in s) o[k]=s[k]; } return o; }
 
 /* ---- Utilitaires ---- */
 function uid(){ return "v"+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4); }
 function fmtTime(ts){ return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }
-
-/* ---- Stockage local (identité du visiteur dans SON navigateur) ---- */
-function lsGet(k){ try { return localStorage.getItem(k); } catch { return null; } }
-function lsSet(k,v){ try { localStorage.setItem(k,v); } catch {} }
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
 
 /* ============================================================
-   COUCHE DONNÉES
-   - Avec Supabase : conversations partagées (vrai site public).
-   - Sans Supabase : repli en mémoire (aperçu local uniquement).
-   Table attendue : messages(id uuid, thread_id text, thread_name text,
-                    sender text, text text, created_at timestamptz)
+   COUCHE DONNÃ‰ES
    ============================================================ */
-const _mem = []; // repli
-
-async function dbInsert(msg){
-  if(!SB_READY){ _mem.push(msg); return; }
-  await sb.from("messages").insert({
-    thread_id: msg.thread_id, thread_name: msg.thread_name,
-    sender: msg.sender, text: msg.text
+var _mem = [];
+function dbInsert(msg){
+  if(!SB_READY){ _mem.push(msg); return Promise.resolve(); }
+  return sb.from("messages").insert({ thread_id:msg.thread_id, thread_name:msg.thread_name, sender:msg.sender, text:msg.text });
+}
+function dbAllForThread(threadId){
+  if(!SB_READY){ return Promise.resolve(_mem.filter(function(m){return m.thread_id===threadId;}).sort(function(a,b){return tsOf(a)-tsOf(b);})); }
+  return sb.from("messages").select("*").eq("thread_id",threadId).order("created_at",{ascending:true}).then(function(r){ return r.data||[]; });
+}
+function groupThreads(rows){
+  var map={};
+  rows.forEach(function(m){
+    if(!map[m.thread_id]) map[m.thread_id]={thread_id:m.thread_id, thread_name:m.thread_name, messages:[]};
+    map[m.thread_id].messages.push(m);
   });
+  return Object.keys(map).map(function(k){ return map[k]; });
 }
-async function dbAllForThread(threadId){
-  if(!SB_READY){ return _mem.filter(m=>m.thread_id===threadId).sort((a,b)=>a.created_at-b.created_at); }
-  const { data } = await sb.from("messages").select("*").eq("thread_id",threadId).order("created_at",{ascending:true});
-  return data||[];
+function dbThreads(){
+  if(!SB_READY){ return Promise.resolve(groupThreads(_mem.slice())); }
+  return sb.from("messages").select("*").order("created_at",{ascending:true}).then(function(r){ return groupThreads(r.data||[]); });
 }
-async function dbThreads(){
-  if(!SB_READY){
-    const map={};
-    _mem.forEach(m=>{ (map[m.thread_id]=map[m.thread_id]||{thread_id:m.thread_id,thread_name:m.thread_name,messages:[]}).messages.push(m); });
-    return Object.values(map).map(t=>({...t, messages:t.messages.sort((a,b)=>a.created_at-b.created_at)}));
-  }
-  const { data } = await sb.from("messages").select("*").order("created_at",{ascending:true});
-  const map={};
-  (data||[]).forEach(m=>{ (map[m.thread_id]=map[m.thread_id]||{thread_id:m.thread_id,thread_name:m.thread_name,messages:[]}).messages.push(m); });
-  return Object.values(map);
-}
-function tsOf(m){ return m.created_at ? new Date(m.created_at).getTime() : m._t || Date.now(); }
+function tsOf(m){ return m.created_at ? new Date(m.created_at).getTime() : (m._t || Date.now()); }
 
-/* ---- Sons façon MSN ---- */
-let _actx;
+/* ---- Sons faÃ§on MSN ---- */
+var _actx;
 function beep(kind){
   try{
     _actx = _actx || new (window.AudioContext||window.webkitAudioContext)();
-    const seq = kind==="in" ? [660,880] : [880,660];
-    seq.forEach((f,i)=>{
-      const o=_actx.createOscillator(), g=_actx.createGain();
+    var seq = kind==="in" ? [660,880] : [880,660];
+    seq.forEach(function(f,i){
+      var o=_actx.createOscillator(), g=_actx.createGain();
       o.type="sine"; o.frequency.value=f; o.connect(g); g.connect(_actx.destination);
-      const t=_actx.currentTime+i*0.1;
+      var t=_actx.currentTime+i*0.1;
       g.gain.setValueAtTime(0.0001,t);
       g.gain.exponentialRampToValueAtTime(0.15,t+0.02);
       g.gain.exponentialRampToValueAtTime(0.0001,t+0.12);
@@ -117,325 +131,313 @@ function beep(kind){
   }catch(e){}
 }
 
-/* ---- Émoticônes ---- */
-const EMOJI=[[/:-?\)/g,"🙂"],[/:-?D/g,"😄"],[/:-?\(/g,"🙁"],[/;-?\)/g,"😉"],[/:-?P/gi,"😛"],[/:-?O/gi,"😮"],[/<3/g,"❤️"],[/\(Y\)/gi,"👍"]];
-function emote(t){ let o=t; EMOJI.forEach(([re,e])=>o=o.replace(re,e)); return o; }
+/* ---- Ã‰moticÃ´nes ---- */
+var EMOJI=[[/:-?\)/g,"ðŸ™‚"],[/:-?D/g,"ðŸ˜„"],[/:-?\(/g,"ðŸ™"],[/;-?\)/g,"ðŸ˜‰"],[/:-?P/gi,"ðŸ˜›"],[/:-?O/gi,"ðŸ˜®"],[/<3/g,"â¤ï¸"],[/\(Y\)/gi,"ðŸ‘"]];
+function emote(t){ var o=t; EMOJI.forEach(function(p){ o=o.replace(p[0],p[1]); }); return o; }
 
 /* ============================================================
-   PRIMITIVES UI RÉTRO
+   PRIMITIVES UI RÃ‰TRO
    ============================================================ */
-function Win({title,children,onClose,online,style}){
-  return (
-    <div style={{...bevelOut,background:C.face,display:"flex",flexDirection:"column",...style}}>
-      <div style={{background:`linear-gradient(90deg,${C.titleA},${C.titleB})`,color:C.white,fontFamily:sysFont,fontWeight:700,fontSize:13,padding:"3px 4px 3px 7px",display:"flex",alignItems:"center",gap:6,userSelect:"none"}}>
-        {online!==undefined && <span style={{width:9,height:9,borderRadius:"50%",background:online?C.green:C.silver,boxShadow:"0 0 3px rgba(0,0,0,.4)"}} />}
-        <span style={{flex:1,textShadow:"1px 1px 0 rgba(0,0,0,.3)"}}>{title}</span>
-        <TitleBtn>_</TitleBtn><TitleBtn>☐</TitleBtn><TitleBtn onClick={onClose}>✕</TitleBtn>
-      </div>
-      <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,padding:3}}>{children}</div>
-    </div>
+function TitleBtn(props){
+  return h("button",{ onClick:props.onClick, style:mix(bevelOut,{background:C.silver,width:18,height:16,fontSize:10,lineHeight:"10px",fontFamily:sysFont,cursor:"pointer",padding:0,display:"flex",alignItems:"center",justifyContent:"center",color:C.ink}) }, props.children);
+}
+function Win(props){
+  return h("div",{ style:mix(bevelOut,{background:C.face,display:"flex",flexDirection:"column"},props.style) },
+    h("div",{ style:{background:"linear-gradient(90deg,"+C.titleA+","+C.titleB+")",color:C.white,fontFamily:sysFont,fontWeight:700,fontSize:13,padding:"3px 4px 3px 7px",display:"flex",alignItems:"center",gap:6,userSelect:"none"} },
+      props.online!==undefined ? h("span",{ style:{width:9,height:9,borderRadius:"50%",background:props.online?C.green:C.silver,boxShadow:"0 0 3px rgba(0,0,0,.4)"} }) : null,
+      h("span",{ style:{flex:1,textShadow:"1px 1px 0 rgba(0,0,0,.3)"} }, props.title),
+      h(TitleBtn,null,"_"), h(TitleBtn,null,"â˜"), h(TitleBtn,{onClick:props.onClose},"âœ•")
+    ),
+    h("div",{ style:{flex:1,display:"flex",flexDirection:"column",minHeight:0,padding:3} }, props.children)
   );
 }
-function TitleBtn({children,onClick}){
-  return <button onClick={onClick} style={{...bevelOut,background:C.silver,width:18,height:16,fontSize:10,lineHeight:"10px",fontFamily:sysFont,cursor:"pointer",padding:0,display:"flex",alignItems:"center",justifyContent:"center",color:C.ink}}>{children}</button>;
-}
-function Btn({children,onClick,primary,full,style}){
-  const [down,setDown]=useState(false);
-  return (
-    <button onClick={onClick}
-      onMouseDown={()=>setDown(true)} onMouseUp={()=>setDown(false)} onMouseLeave={()=>setDown(false)}
-      style={{...(down?bevelIn:bevelOut),background:C.silver,fontFamily:sysFont,fontSize:13,fontWeight:primary?700:400,padding:"4px 14px",cursor:"pointer",color:C.ink,width:full?"100%":"auto",...style}}>
-      {children}
-    </button>
-  );
+function Btn(props){
+  var st = useState(false), down=st[0], setDown=st[1];
+  return h("button",{
+    onClick:props.onClick,
+    onMouseDown:function(){setDown(true);}, onMouseUp:function(){setDown(false);}, onMouseLeave:function(){setDown(false);},
+    style:mix(down?bevelIn:bevelOut,{background:C.silver,fontFamily:sysFont,fontSize:13,fontWeight:props.primary?700:400,padding:"4px 14px",cursor:"pointer",color:C.ink,width:props.full?"100%":"auto"},props.style)
+  }, props.children);
 }
 function Field(props){
-  return <input {...props} style={{...bevelIn,background:C.field,fontFamily:sysFont,fontSize:13,padding:"4px 6px",outline:"none",color:C.ink,...(props.style||{})}} />;
+  var p = mix(props,{ style:mix(bevelIn,{background:C.field,fontFamily:sysFont,fontSize:13,padding:"4px 6px",outline:"none",color:C.ink},props.style) });
+  return h("input",p);
 }
-function Buddy({size=28}){
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <ellipse cx="16" cy="27" rx="11" ry="4" fill="#1B5FA8" />
-      <circle cx="16" cy="11" r="8" fill="#2E84D6" stroke="#0A4C90" strokeWidth="1.5" />
-      <path d="M5 26c0-6 5-9 11-9s11 3 11 9" fill="#2E84D6" stroke="#0A4C90" strokeWidth="1.5" />
-    </svg>
+function Buddy(props){
+  var size=props&&props.size?props.size:28;
+  return h("svg",{ width:size, height:size, viewBox:"0 0 32 32", "aria-hidden":"true" },
+    h("ellipse",{cx:"16",cy:"27",rx:"11",ry:"4",fill:"#1B5FA8"}),
+    h("circle",{cx:"16",cy:"11",r:"8",fill:"#2E84D6",stroke:"#0A4C90",strokeWidth:"1.5"}),
+    h("path",{d:"M5 26c0-6 5-9 11-9s11 3 11 9",fill:"#2E84D6",stroke:"#0A4C90",strokeWidth:"1.5"})
   );
 }
 
 /* ---- Liste messages + saisie ---- */
-function MessageList({messages,mineSender}){
-  const endRef=useRef(null);
-  useEffect(()=>{ endRef.current && endRef.current.scrollIntoView({behavior:"smooth"}); },[messages]);
-  return (
-    <div style={{...bevelIn,flex:1,overflowY:"auto",background:C.white,padding:"6px 8px",fontFamily:"Verdana,Geneva,sans-serif",fontSize:12.5,minHeight:0}}>
-      {messages.length===0 && <div style={{color:C.shadow,textAlign:"center",marginTop:24}}>✦ Aucun message. Lance la conversation ! ✦</div>}
-      {messages.map((m,i)=>{
-        const mine=m.sender===mineSender;
-        const who = m.sender==="admin" ? ADMIN_NAME : (mineSender==="admin" ? "Visiteur" : "Toi");
-        return (
-          <div key={m.id||i} style={{marginBottom:7}}>
-            <span style={{color:mine?"#C2410C":C.msnBlue,fontWeight:700}}>{who}</span>
-            <span style={{color:C.shadow,fontSize:11}}> ({fmtTime(tsOf(m))}) dit :</span>
-            <div style={{color:C.ink,marginLeft:2,marginTop:1}}>{emote(m.text)}</div>
-          </div>
-        );
-      })}
-      <div ref={endRef} />
-    </div>
+function MessageList(props){
+  var messages=props.messages, mineSender=props.mineSender;
+  var endRef=useRef(null);
+  useEffect(function(){ if(endRef.current) endRef.current.scrollIntoView({behavior:"smooth"}); },[messages]);
+  var rows = messages.map(function(m,i){
+    var mine = m.sender===mineSender;
+    var who = m.sender==="admin" ? ADMIN_NAME : (mineSender==="admin" ? "Visiteur" : "Toi");
+    return h("div",{ key:m.id||i, style:{marginBottom:7} },
+      h("span",{ style:{color:mine?"#C2410C":C.msnBlue,fontWeight:700} }, who),
+      h("span",{ style:{color:C.shadow,fontSize:11} }, " ("+fmtTime(tsOf(m))+") dit :"),
+      h("div",{ style:{color:C.ink,marginLeft:2,marginTop:1} }, emote(m.text))
+    );
+  });
+  return h("div",{ style:mix(bevelIn,{flex:1,overflowY:"auto",background:C.white,padding:"6px 8px",fontFamily:"Verdana,Geneva,sans-serif",fontSize:12.5,minHeight:0}) },
+    messages.length===0 ? h("div",{ style:{color:C.shadow,textAlign:"center",marginTop:24} }, "âœ¦ Aucun message. Lance la conversation ! âœ¦") : null,
+    rows,
+    h("div",{ ref:endRef })
   );
 }
-function Composer({onSend,placeholder,onNudge}){
-  const [val,setVal]=useState("");
-  const send=()=>{ const t=val.trim(); if(!t)return; onSend(t); setVal(""); };
-  return (
-    <div style={{marginTop:3}}>
-      <div style={{display:"flex",gap:3,marginBottom:3}}>
-        {onNudge && <Btn onClick={onNudge} style={{fontSize:12,padding:"2px 8px"}}>Wizz !</Btn>}
-        <span style={{fontFamily:sysFont,fontSize:11,color:C.shadow,alignSelf:"center",marginLeft:2}}>{":-) :-D ;-) <3"}</span>
-      </div>
-      <div style={{display:"flex",gap:3}}>
-        <textarea value={val} onChange={e=>setVal(e.target.value)}
-          onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
-          placeholder={placeholder} rows={2}
-          style={{...bevelIn,flex:1,resize:"none",background:C.field,fontFamily:"Verdana,sans-serif",fontSize:12.5,padding:"5px 7px",outline:"none",color:C.ink}} />
-        <Btn onClick={send} primary style={{alignSelf:"stretch",padding:"0 16px"}}>Envoyer</Btn>
-      </div>
-    </div>
+function Composer(props){
+  var st=useState(""), val=st[0], setVal=st[1];
+  function send(){ var t=val.trim(); if(!t) return; props.onSend(t); setVal(""); }
+  return h("div",{ style:{marginTop:3} },
+    h("div",{ style:{display:"flex",gap:3,marginBottom:3} },
+      props.onNudge ? h(Btn,{ onClick:props.onNudge, style:{fontSize:12,padding:"2px 8px"} },"Wizz !") : null,
+      h("span",{ style:{fontFamily:sysFont,fontSize:11,color:C.shadow,alignSelf:"center",marginLeft:2} }, ":-) :-D ;-) <3")
+    ),
+    h("div",{ style:{display:"flex",gap:3} },
+      h("textarea",{
+        value:val, onChange:function(e){setVal(e.target.value);},
+        onKeyDown:function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } },
+        placeholder:props.placeholder, rows:2,
+        style:mix(bevelIn,{flex:1,resize:"none",background:C.field,fontFamily:"Verdana,sans-serif",fontSize:12.5,padding:"5px 7px",outline:"none",color:C.ink})
+      }),
+      h(Btn,{ onClick:send, primary:true, style:{alignSelf:"stretch",padding:"0 16px"} },"Envoyer")
+    )
   );
 }
-function ContactStrip({name,status}){
-  return (
-    <div style={{...bevelOut,background:`linear-gradient(180deg,#fff,${C.face})`,display:"flex",alignItems:"center",gap:8,padding:"5px 8px",marginBottom:3}}>
-      <Buddy size={32} />
-      <div style={{fontFamily:sysFont}}>
-        <div style={{fontWeight:700,fontSize:13,color:C.ink}}>{name}</div>
-        <div style={{fontSize:11,color:C.green,display:"flex",alignItems:"center",gap:4}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block"}} />{status}
-        </div>
-      </div>
-    </div>
+function ContactStrip(props){
+  return h("div",{ style:mix(bevelOut,{background:"linear-gradient(180deg,#fff,"+C.face+")",display:"flex",alignItems:"center",gap:8,padding:"5px 8px",marginBottom:3}) },
+    h(Buddy,{size:32}),
+    h("div",{ style:{fontFamily:sysFont} },
+      h("div",{ style:{fontWeight:700,fontSize:13,color:C.ink} }, props.name),
+      h("div",{ style:{fontSize:11,color:C.green,display:"flex",alignItems:"center",gap:4} },
+        h("span",{ style:{width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block"} }),
+        props.status
+      )
+    )
   );
 }
 
 /* ============================================================
    ESPACE VISITEUR
    ============================================================ */
-function VisitorApp({goHome}){
-  const [threadId,setThreadId]=useState(null);
-  const [threadName,setThreadName]=useState("");
-  const [messages,setMessages]=useState([]);
-  const [started,setStarted]=useState(false);
-  const prevCount=useRef(0);
+function VisitorApp(props){
+  var goHome=props.goHome;
+  var s1=useState(null), threadId=s1[0], setThreadId=s1[1];
+  var s2=useState(""), threadName=s2[0], setThreadName=s2[1];
+  var s3=useState([]), messages=s3[0], setMessages=s3[1];
+  var s4=useState(false), started=s4[0], setStarted=s4[1];
+  var prevCount=useRef(0);
 
-  useEffect(()=>{
-    const id=lsGet("myThreadId"), nm=lsGet("myThreadName");
+  useEffect(function(){
+    var id=lsGet("myThreadId"), nm=lsGet("myThreadName");
     if(id){ setThreadId(id); setThreadName(nm||"Visiteur"); setStarted(true); }
   },[]);
 
-  useEffect(()=>{
+  useEffect(function(){
     if(!threadId) return;
-    let alive=true;
-    const tick=async()=>{
-      const list=await dbAllForThread(threadId);
-      if(!alive) return;
-      if(list.length>prevCount.current && list.length && list[list.length-1].sender==="admin") beep("in");
-      prevCount.current=list.length;
-      setMessages(list);
-    };
+    var alive=true;
+    function tick(){
+      dbAllForThread(threadId).then(function(list){
+        if(!alive) return;
+        if(list.length>prevCount.current && list.length && list[list.length-1].sender==="admin") beep("in");
+        prevCount.current=list.length;
+        setMessages(list);
+      });
+    }
     tick();
-    const iv=setInterval(tick,POLL_MS);
-    return ()=>{ alive=false; clearInterval(iv); };
+    var iv=setInterval(tick,POLL_MS);
+    return function(){ alive=false; clearInterval(iv); };
   },[threadId]);
 
-  const begin=useCallback(async()=>{
-    const id=uid();
-    const all=await dbThreads();
-    const name=`Visiteur ${all.length+1}`;
-    lsSet("myThreadId",id); lsSet("myThreadName",name);
-    setThreadId(id); setThreadName(name); setStarted(true);
+  var begin=useCallback(function(){
+    dbThreads().then(function(all){
+      var id=uid(), name="Visiteur "+(all.length+1);
+      lsSet("myThreadId",id); lsSet("myThreadName",name);
+      setThreadId(id); setThreadName(name); setStarted(true);
+    });
   },[]);
 
-  const send=useCallback(async(text)=>{
-    const msg={id:uid(),thread_id:threadId,thread_name:threadName,sender:"user",text,_t:Date.now()};
-    setMessages(m=>[...m,msg]); prevCount.current+=1;
-    await dbInsert(msg);
+  var send=useCallback(function(text){
+    var msg={id:uid(),thread_id:threadId,thread_name:threadName,sender:"user",text:text,_t:Date.now()};
+    setMessages(function(m){ return m.concat([msg]); }); prevCount.current+=1;
+    dbInsert(msg);
   },[threadId,threadName]);
 
-  const nudge=useCallback(()=>{ beep("out"); send("✊ *toc toc !* (Wizz)"); },[send]);
+  var nudge=useCallback(function(){ beep("out"); send("âœŠ *toc toc !* (Wizz)"); },[send]);
 
   if(!started){
-    return (
-      <Center>
-        <Win title={`Parler à ${ADMIN_NAME} - Messagerie`} onClose={goHome} online style={{width:360,maxWidth:"100%"}}>
-          <div style={{padding:"18px 16px",textAlign:"center",fontFamily:sysFont}}>
-            <Buddy size={56} />
-            <div style={{fontSize:17,fontWeight:700,color:C.msnBlue,margin:"10px 0 4px"}}>{ADMIN_NAME} est en ligne</div>
-            <div style={{fontSize:12.5,color:C.dark,marginBottom:16,lineHeight:1.5}}>Écris-lui anonymement. Pas de nom, pas de compte.</div>
-            <Btn primary full onClick={begin} style={{padding:"7px"}}>✉ Envoyer un message à {ADMIN_NAME}</Btn>
-          </div>
-        </Win>
-      </Center>
+    return h(Center,null,
+      h(Win,{ title:"Parler Ã  "+ADMIN_NAME+" - Messagerie", onClose:goHome, online:true, style:{width:360,maxWidth:"100%"} },
+        h("div",{ style:{padding:"18px 16px",textAlign:"center",fontFamily:sysFont} },
+          h(Buddy,{size:56}),
+          h("div",{ style:{fontSize:17,fontWeight:700,color:C.msnBlue,margin:"10px 0 4px"} }, ADMIN_NAME+" est en ligne"),
+          h("div",{ style:{fontSize:12.5,color:C.dark,marginBottom:16,lineHeight:1.5} }, "Ã‰cris-lui anonymement. Pas de nom, pas de compte."),
+          h(Btn,{ primary:true, full:true, onClick:begin, style:{padding:"7px"} }, "âœ‰ Envoyer un message Ã  "+ADMIN_NAME)
+        )
+      )
     );
   }
-  return (
-    <Center>
-      <Win title={`${ADMIN_NAME} - Conversation`} onClose={goHome} online style={{width:420,height:460,maxWidth:"100%"}}>
-        <ContactStrip name={ADMIN_NAME} status="En ligne" />
-        <MessageList messages={messages} mineSender="user" />
-        <Composer onSend={send} onNudge={nudge} placeholder="Tape ton message…" />
-      </Win>
-    </Center>
+  return h(Center,null,
+    h(Win,{ title:ADMIN_NAME+" - Conversation", onClose:goHome, online:true, style:{width:420,height:460,maxWidth:"100%"} },
+      h(ContactStrip,{ name:ADMIN_NAME, status:"En ligne" }),
+      h(MessageList,{ messages:messages, mineSender:"user" }),
+      h(Composer,{ onSend:send, onNudge:nudge, placeholder:"Tape ton messageâ€¦" })
+    )
   );
 }
 
 /* ============================================================
    ESPACE ADMIN (Bob)
    ============================================================ */
-function AdminApp({goHome}){
-  const [authed,setAuthed]=useState(false);
-  const [code,setCode]=useState("");
-  const [err,setErr]=useState(false);
-  const [threads,setThreads]=useState([]);
-  const [activeId,setActiveId]=useState(null);
-  const prevTotal=useRef(0);
+function AdminApp(props){
+  var goHome=props.goHome;
+  var s1=useState(false), authed=s1[0], setAuthed=s1[1];
+  var s2=useState(""), code=s2[0], setCode=s2[1];
+  var s3=useState(false), err=s3[0], setErr=s3[1];
+  var s4=useState([]), threads=s4[0], setThreads=s4[1];
+  var s5=useState(null), activeId=s5[0], setActiveId=s5[1];
+  var prevTotal=useRef(0);
 
-  const loadAll=useCallback(async()=>{
-    const list=await dbThreads();
-    list.forEach(t=>t.messages.sort((a,b)=>tsOf(a)-tsOf(b)));
-    list.sort((a,b)=>{
-      const la=a.messages[a.messages.length-1], lb=b.messages[b.messages.length-1];
-      return (lb?tsOf(lb):0)-(la?tsOf(la):0);
+  var loadAll=useCallback(function(){
+    return dbThreads().then(function(list){
+      list.forEach(function(t){ t.messages.sort(function(a,b){ return tsOf(a)-tsOf(b); }); });
+      list.sort(function(a,b){
+        var la=a.messages[a.messages.length-1], lb=b.messages[b.messages.length-1];
+        return (lb?tsOf(lb):0)-(la?tsOf(la):0);
+      });
+      var total=list.reduce(function(s,t){ return s+t.messages.length; },0);
+      if(total>prevTotal.current && prevTotal.current!==0) beep("in");
+      prevTotal.current=total;
+      setThreads(list);
     });
-    const total=list.reduce((s,t)=>s+t.messages.length,0);
-    if(total>prevTotal.current && prevTotal.current!==0) beep("in");
-    prevTotal.current=total;
-    setThreads(list);
   },[]);
 
-  useEffect(()=>{
+  useEffect(function(){
     if(!authed) return;
     loadAll();
-    const iv=setInterval(loadAll,POLL_MS);
-    return ()=>clearInterval(iv);
+    var iv=setInterval(loadAll,POLL_MS);
+    return function(){ clearInterval(iv); };
   },[authed,loadAll]);
 
-  const reply=useCallback(async(text)=>{
+  var reply=useCallback(function(text){
     if(!activeId) return;
-    const t=threads.find(x=>x.thread_id===activeId);
-    const msg={id:uid(),thread_id:activeId,thread_name:t?t.thread_name:"Visiteur",sender:"admin",text,_t:Date.now()};
-    setThreads(prev=>prev.map(x=>x.thread_id===activeId?{...x,messages:[...x.messages,msg]}:x));
-    await dbInsert(msg);
+    var t=threads.filter(function(x){return x.thread_id===activeId;})[0];
+    var msg={id:uid(),thread_id:activeId,thread_name:t?t.thread_name:"Visiteur",sender:"admin",text:text,_t:Date.now()};
+    setThreads(function(prev){ return prev.map(function(x){ return x.thread_id===activeId ? mix(x,{messages:x.messages.concat([msg])}) : x; }); });
+    dbInsert(msg);
   },[activeId,threads]);
 
-  const tryAuth=()=>{ if(code===ADMIN_CODE){ setAuthed(true); beep("in"); } else setErr(true); };
+  function tryAuth(){ if(code===ADMIN_CODE){ setAuthed(true); beep("in"); } else setErr(true); }
 
   if(!authed){
-    return (
-      <Center>
-        <Win title="Connexion .NET Messenger" onClose={goHome} style={{width:320,maxWidth:"100%"}}>
-          <div style={{padding:16,textAlign:"center",fontFamily:sysFont}}>
-            <Buddy size={48} />
-            <div style={{fontSize:13,color:C.dark,margin:"10px 0 12px"}}>Espace de {ADMIN_NAME}. Entre ton code.</div>
-            <Field type="password" value={code} onChange={e=>{setCode(e.target.value);setErr(false);}}
-              onKeyDown={e=>e.key==="Enter"&&tryAuth()} placeholder="Code" style={{width:"100%",textAlign:"center",marginBottom:10}} />
-            {err && <div style={{color:"#B00",fontSize:12,marginBottom:8}}>Code incorrect.</div>}
-            <Btn primary full onClick={tryAuth} style={{padding:"6px"}}>Se connecter</Btn>
-          </div>
-        </Win>
-      </Center>
+    return h(Center,null,
+      h(Win,{ title:"Connexion .NET Messenger", onClose:goHome, style:{width:320,maxWidth:"100%"} },
+        h("div",{ style:{padding:16,textAlign:"center",fontFamily:sysFont} },
+          h(Buddy,{size:48}),
+          h("div",{ style:{fontSize:13,color:C.dark,margin:"10px 0 12px"} }, "Espace de "+ADMIN_NAME+". Entre ton code."),
+          h(Field,{ type:"password", value:code, onChange:function(e){setCode(e.target.value);setErr(false);},
+            onKeyDown:function(e){ if(e.key==="Enter") tryAuth(); }, placeholder:"Code", style:{width:"100%",textAlign:"center",marginBottom:10} }),
+          err ? h("div",{ style:{color:"#B00",fontSize:12,marginBottom:8} }, "Code incorrect.") : null,
+          h(Btn,{ primary:true, full:true, onClick:tryAuth, style:{padding:"6px"} }, "Se connecter")
+        )
+      )
     );
   }
 
-  const active=threads.find(t=>t.thread_id===activeId);
-  return (
-    <Center wide>
-      <Win title={`Liste de contacts de ${ADMIN_NAME}`} onClose={goHome} online style={{width:700,height:480,maxWidth:"100%"}}>
-        <div style={{display:"flex",gap:3,flex:1,minHeight:0}}>
-          <div style={{...bevelIn,width:210,minWidth:140,background:C.white,display:"flex",flexDirection:"column",fontFamily:sysFont}}>
-            <div style={{background:`linear-gradient(90deg,${C.titleA},${C.titleB})`,color:"#fff",fontSize:11,fontWeight:700,padding:"3px 6px"}}>En ligne ({threads.length})</div>
-            <div style={{flex:1,overflowY:"auto"}}>
-              {threads.length===0 && <div style={{padding:12,fontSize:12,color:C.shadow,textAlign:"center"}}>Personne pour l'instant.</div>}
-              {threads.map(t=>{
-                const last=t.messages[t.messages.length-1], isA=t.thread_id===activeId;
-                return (
-                  <div key={t.thread_id} onClick={()=>setActiveId(t.thread_id)}
-                    style={{display:"flex",alignItems:"center",gap:6,padding:"5px 6px",cursor:"pointer",background:isA?"#316AC5":"transparent",color:isA?"#fff":C.ink}}>
-                    <Buddy size={26} />
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12.5,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.thread_name}</div>
-                      <div style={{fontSize:11,opacity:isA?0.85:0.6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{last?emote(last.text):"—"}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-            {active ? (
-              <React.Fragment>
-                <ContactStrip name={active.thread_name} status="Anonyme · En ligne" />
-                <MessageList messages={active.messages} mineSender="admin" />
-                <Composer onSend={reply} placeholder={`Répondre à ${active.thread_name}…`} />
-              </React.Fragment>
-            ) : (
-              <div style={{...bevelIn,flex:1,background:C.white,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:sysFont,fontSize:13,color:C.shadow,textAlign:"center",padding:20}}>
-                Clique un contact à gauche pour ouvrir la conversation.
-              </div>
-            )}
-          </div>
-        </div>
-      </Win>
-    </Center>
+  var active = threads.filter(function(t){return t.thread_id===activeId;})[0];
+  var list = h("div",{ style:mix(bevelIn,{width:210,minWidth:140,background:C.white,display:"flex",flexDirection:"column",fontFamily:sysFont}) },
+    h("div",{ style:{background:"linear-gradient(90deg,"+C.titleA+","+C.titleB+")",color:"#fff",fontSize:11,fontWeight:700,padding:"3px 6px"} }, "En ligne ("+threads.length+")"),
+    h("div",{ style:{flex:1,overflowY:"auto"} },
+      threads.length===0 ? h("div",{ style:{padding:12,fontSize:12,color:C.shadow,textAlign:"center"} }, "Personne pour l'instant.") : null,
+      threads.map(function(t){
+        var last=t.messages[t.messages.length-1], isA=t.thread_id===activeId;
+        return h("div",{ key:t.thread_id, onClick:function(){ setActiveId(t.thread_id); },
+          style:{display:"flex",alignItems:"center",gap:6,padding:"5px 6px",cursor:"pointer",background:isA?"#316AC5":"transparent",color:isA?"#fff":C.ink} },
+          h(Buddy,{size:26}),
+          h("div",{ style:{flex:1,minWidth:0} },
+            h("div",{ style:{fontSize:12.5,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"} }, t.thread_name),
+            h("div",{ style:{fontSize:11,opacity:isA?0.85:0.6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"} }, last?emote(last.text):"â€”")
+          )
+        );
+      })
+    )
+  );
+  var panel = h("div",{ style:{flex:1,display:"flex",flexDirection:"column",minWidth:0} },
+    active
+      ? h(Fragment,null,
+          h(ContactStrip,{ name:active.thread_name, status:"Anonyme Â· En ligne" }),
+          h(MessageList,{ messages:active.messages, mineSender:"admin" }),
+          h(Composer,{ onSend:reply, placeholder:"RÃ©pondre Ã  "+active.thread_name+"â€¦" })
+        )
+      : h("div",{ style:mix(bevelIn,{flex:1,background:C.white,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:sysFont,fontSize:13,color:C.shadow,textAlign:"center",padding:20}) },
+          "Clique un contact Ã  gauche pour ouvrir la conversation.")
+  );
+  return h(Center,{ wide:true },
+    h(Win,{ title:"Liste de contacts de "+ADMIN_NAME, onClose:goHome, online:true, style:{width:700,height:480,maxWidth:"100%"} },
+      h("div",{ style:{display:"flex",gap:3,flex:1,minHeight:0} }, list, panel)
+    )
   );
 }
 
 /* ============================================================
    ACCUEIL + LAYOUT
    ============================================================ */
-function Home({go}){
-  return (
-    <Center>
-      <Win title={`Parler à ${ADMIN_NAME}`} online style={{width:340,maxWidth:"100%"}}>
-        <div style={{padding:"20px 18px",textAlign:"center",fontFamily:sysFont}}>
-          <Buddy size={60} />
-          <div style={{fontSize:19,fontWeight:700,color:C.msnBlue,margin:"8px 0 16px",textShadow:"1px 1px 0 #fff"}}>Messagerie anonyme</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <Btn primary full onClick={()=>go("visitor")} style={{padding:"9px"}}>✉ Écrire à {ADMIN_NAME}</Btn>
-            <Btn full onClick={()=>go("admin")} style={{padding:"9px"}}>🔑 Je suis {ADMIN_NAME}</Btn>
-          </div>
-          {!SB_READY && <div style={{fontSize:10.5,color:"#B00",marginTop:14,lineHeight:1.4}}>⚠ Supabase non configuré : mode local seulement. Voir README.md.</div>}
-        </div>
-      </Win>
-    </Center>
+function Home(props){
+  var go=props.go;
+  return h(Center,null,
+    h(Win,{ title:"Parler Ã  "+ADMIN_NAME, online:true, style:{width:340,maxWidth:"100%"} },
+      h("div",{ style:{padding:"20px 18px",textAlign:"center",fontFamily:sysFont} },
+        h(Buddy,{size:60}),
+        h("div",{ style:{fontSize:19,fontWeight:700,color:C.msnBlue,margin:"8px 0 16px",textShadow:"1px 1px 0 #fff"} }, "Messagerie anonyme"),
+        h("div",{ style:{display:"flex",flexDirection:"column",gap:8} },
+          h(Btn,{ primary:true, full:true, onClick:function(){go("visitor");}, style:{padding:"9px"} }, "âœ‰ Ã‰crire Ã  "+ADMIN_NAME),
+          h(Btn,{ full:true, onClick:function(){go("admin");}, style:{padding:"9px"} }, "ðŸ”‘ Je suis "+ADMIN_NAME)
+        ),
+        !SB_READY ? h("div",{ style:{fontSize:10.5,color:"#B00",marginTop:14,lineHeight:1.4} }, "âš  Supabase non configurÃ© : mode local seulement. Voir README.md.") : null
+      )
+    )
   );
 }
-function Center({children,wide}){
-  return <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:wide?12:20,minHeight:0}}>{children}</div>;
-}
-function App(){
-  const [view,setView]=useState("home");
-  return (
-    <div style={{height:"100vh",width:"100%",display:"flex",flexDirection:"column",background:"repeating-linear-gradient(45deg,#0a7d7d 0 14px,#0b8585 14px 28px), #0a7d7d",overflow:"hidden"}}>
-      {view==="home" && <Home go={setView} />}
-      {view==="visitor" && <VisitorApp goHome={()=>setView("home")} />}
-      {view==="admin" && <AdminApp goHome={()=>setView("home")} />}
-      <div style={{...bevelOut,background:C.silver,height:30,display:"flex",alignItems:"center",padding:"0 4px",gap:6,flexShrink:0}}>
-        <div style={{...bevelOut,background:C.silver,padding:"2px 10px 2px 6px",display:"flex",alignItems:"center",gap:5,fontFamily:sysFont,fontWeight:700,fontSize:13}}>
-          <Buddy size={18} /> Démarrer
-        </div>
-        <div style={{flex:1}} />
-        <Clock />
-      </div>
-    </div>
-  );
+function Center(props){
+  return h("div",{ style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:props.wide?12:20,minHeight:0} }, props.children);
 }
 function Clock(){
-  const [t,setT]=useState(new Date());
-  useEffect(()=>{ const iv=setInterval(()=>setT(new Date()),10000); return ()=>clearInterval(iv); },[]);
-  return <div style={{...bevelIn,background:C.silver,padding:"2px 8px",fontFamily:sysFont,fontSize:12}}>{t.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>;
+  var st=useState(new Date()), t=st[0], setT=st[1];
+  useEffect(function(){ var iv=setInterval(function(){ setT(new Date()); },10000); return function(){ clearInterval(iv); }; },[]);
+  return h("div",{ style:mix(bevelIn,{background:C.silver,padding:"2px 8px",fontFamily:sysFont,fontSize:12}) }, t.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}));
+}
+function App(){
+  var st=useState("home"), view=st[0], setView=st[1];
+  function go(v){ setView(v); }
+  return h("div",{ style:{height:"100vh",width:"100%",display:"flex",flexDirection:"column",background:"repeating-linear-gradient(45deg,#0a7d7d 0 14px,#0b8585 14px 28px), #0a7d7d",overflow:"hidden"} },
+    view==="home" ? h(Home,{ go:go }) : null,
+    view==="visitor" ? h(VisitorApp,{ goHome:function(){ setView("home"); } }) : null,
+    view==="admin" ? h(AdminApp,{ goHome:function(){ setView("home"); } }) : null,
+    h("div",{ style:mix(bevelOut,{background:C.silver,height:30,display:"flex",alignItems:"center",padding:"0 4px",gap:6,flexShrink:0}) },
+      h("div",{ style:mix(bevelOut,{background:C.silver,padding:"2px 10px 2px 6px",display:"flex",alignItems:"center",gap:5,fontFamily:sysFont,fontWeight:700,fontSize:13}) },
+        h(Buddy,{size:18}), " DÃ©marrer"
+      ),
+      h("div",{ style:{flex:1} }),
+      h(Clock,null)
+    )
+  );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+try {
+  var rootEl = document.getElementById("root");
+  rootEl.dataset.mounted = "1";
+  ReactDOM.createRoot(rootEl).render(h(App));
+} catch (e) {
+  document.getElementById("root").dataset.mounted = "";
+  throw e;
+}
 </script>
 </body>
 </html>
