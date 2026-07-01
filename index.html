@@ -5,36 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0a7d7d" />
 <title>Parler à Bob — Messagerie anonyme</title>
-<!-- Polices rétro chargées depuis Google Fonts : rendu identique sur Mac, PC, Android, iPhone.
-     Si le réseau est lent, le navigateur affiche d'abord le repli système (font-display swap). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;700&family=VT323&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
-  /* 100dvh suit la hauteur réelle du navigateur mobile (barre d'adresse qui apparaît/disparaît) */
   #root { height: 100vh; height: 100dvh; }
   * { box-sizing: border-box; }
-  /* Empêche le zoom automatique d'iOS au focus : taille de police >= 16px sur les champs */
   input, textarea, button { font-size: 16px; }
-  /* Zones tactiles confortables */
   button { touch-action: manipulation; }
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-track { background: #C0C0C0; }
   ::-webkit-scrollbar-thumb { background: #C0C0C0; border: 2px solid #fff; border-right-color:#808080; border-bottom-color:#808080; }
   textarea::placeholder, input::placeholder { color: #808080; }
 </style>
-<!-- React seul : le fichier ne contient que du JavaScript standard,
-     GitHub Pages le sert tel quel, aucune transformation au chargement. -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<!-- Client Supabase (base de données partagée) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div id="root"></div>
 
-<!-- Filet de sécurité : affiche toute erreur à l'écran au lieu d'une page blanche -->
 <script>
 window.addEventListener("error", function (e) {
   var r = document.getElementById("root");
@@ -50,9 +41,6 @@ window.addEventListener("error", function (e) {
 </script>
 
 <script>
-/* ============================================================
-   CONFIGURATION — À REMPLIR (voir README.md, étape Supabase)
-   ============================================================ */
 window.CONFIG = {
   ADMIN_NAME: "Bob",
   ADMIN_CODE: "197314",             
@@ -63,10 +51,6 @@ window.CONFIG = {
 
 <script>
 "use strict";
-/* ============================================================
-   Tout en JavaScript standard. Le JSX est remplacé par la
-   fonction h() (hyperscript) = React.createElement.
-   ============================================================ */
 var h = React.createElement;
 var useState = React.useState, useEffect = React.useEffect,
     useRef = React.useRef, useCallback = React.useCallback,
@@ -77,30 +61,21 @@ var ADMIN_NAME = CFG.ADMIN_NAME;
 var ADMIN_CODE = CFG.ADMIN_CODE;
 var POLL_MS = 2000;
 
-/* ---- Connexion Supabase, ou repli local si non configuré ---- */
-/* Nettoyage de l'URL : on garde uniquement le domaine https://xxxx.supabase.co.
-   Si un /rest/v1 ou un slash final a été collé par erreur, on le retire,
-   sinon la librairie le rajoute et l'adresse devient .../rest/v1/rest/v1/... (cassée). */
 function cleanSupabaseUrl(u){
   if(!u) return "";
   u = u.trim();
-  u = u.replace(/\/+$/, "");          // enlève les slashs finaux
-  u = u.replace(/\/rest\/v1.*$/i, ""); // enlève un /rest/v1 (et ce qui suit) collé par erreur
+  u = u.replace(/\/+$/, "");        
+  u = u.replace(/\/rest\/v1.*$/i, ""); 
   u = u.replace(/\/+$/, "");
   return u;
 }
 var SB_URL = cleanSupabaseUrl(CFG.SUPABASE_URL);
 var SB_KEY = (CFG.SUPABASE_ANON_KEY||"").trim();
 
-/* Détecte une clé SECRÈTE collée par erreur (interdite dans un navigateur).
-   Les clés secrètes commencent par "sb_secret_" ou sont des JWT de rôle service_role.
-   La bonne clé est la clé "anon"/"public" (commence par "sb_publishable_" ou
-   un JWT contenant "role":"anon"). */
 function looksSecret(k){
   if(!k) return false;
   if(/^sb_secret_/i.test(k)) return true;
   if(/service_role/i.test(k)) return true;
-  // JWT : on tente de lire le rôle dans la charge utile
   try{
     var parts = k.split(".");
     if(parts.length===3){
@@ -114,14 +89,12 @@ var KEY_IS_SECRET = looksSecret(SB_KEY);
 var SB_READY = !!(SB_URL && SB_KEY && !KEY_IS_SECRET);
 var sb = SB_READY ? supabase.createClient(SB_URL, SB_KEY) : null;
 if(KEY_IS_SECRET){
-  // Avertissement affiché par la bannière, et on NE crée PAS de client (évite d'exposer la clé)
   setTimeout(function(){
     if(typeof setDbError==="function")
       setDbError({message:"Tu as coll\u00e9 une cl\u00e9 SECR\u00c8TE (interdite dans un navigateur). R\u00e9voque-la dans Supabase, puis colle la cl\u00e9 \u00ab anon / public \u00bb \u00e0 la place."});
   },0);
 }
 
-/* ---- Tokens "vieux internet" (MSN / Win98) ---- */
 var C = {
   silver:"#C0C0C0", face:"#ECE9D8", titleA:"#0A246A", titleB:"#3A8BE8",
   green:"#2FAE45", white:"#FFFFFF", shadow:"#808080", dark:"#404040",
@@ -133,17 +106,13 @@ var sysFont = "'Pixelify Sans','Tahoma','MS Sans Serif',Geneva,sans-serif";
 var chatFont = "'VT323','Tahoma',Verdana,monospace";
 function mix(){ var o={},i,k; for(i=0;i<arguments.length;i++){ var s=arguments[i]; if(s) for(k in s) o[k]=s[k]; } return o; }
 
-/* ---- Utilitaires ---- */
 function uid(){ return "v"+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4); }
 function fmtTime(ts){ return new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
 
-/* ============================================================
-   COUCHE DONNÉES
-   ============================================================ */
 var _mem = [];
-var LAST_DB_ERROR = null;            // dernière erreur Supabase, pour l'afficher à l'écran
+var LAST_DB_ERROR = null;         
 var _errListeners = [];
 function setDbError(e){
   LAST_DB_ERROR = e ? (e.message || e.hint || e.details || JSON.stringify(e)) : null;
@@ -191,7 +160,6 @@ function dbThreads(){
 }
 function tsOf(m){ return m.created_at ? new Date(m.created_at).getTime() : (m._t || Date.now()); }
 
-/* ---- Sons façon MSN ---- */
 var _actx;
 function beep(kind){
   try{
@@ -209,11 +177,9 @@ function beep(kind){
   }catch(e){}
 }
 
-/* ---- Émoticônes ---- */
 var EMOJI=[[/:-?\)/g,"\ud83d\ude42"],[/:-?D/g,"\ud83d\ude04"],[/:-?\(/g,"\ud83d\ude41"],[/;-?\)/g,"\ud83d\ude09"],[/:-?P/gi,"\ud83d\ude1b"],[/:-?O/gi,"\ud83d\ude2e"],[/<3/g,"\u2764\ufe0f"],[/\(Y\)/gi,"\ud83d\udc4d"]];
 function emote(t){ var o=t; EMOJI.forEach(function(p){ o=o.replace(p[0],p[1]); }); return o; }
 
-/* ---- Détection mobile : renvoie true sur petit écran, et se met à jour à la rotation ---- */
 function useIsMobile(){
   var st=useState(typeof window!=="undefined" && window.innerWidth<=620), m=st[0], setM=st[1];
   useEffect(function(){
@@ -225,16 +191,12 @@ function useIsMobile(){
   return m;
 }
 
-/* ============================================================
-   PRIMITIVES UI RÉTRO
-   ============================================================ */
 function TitleBtn(props){
   var big = props.big;
   return h("button",{ onClick:props.onClick, style:mix(bevelOut,{background:C.silver,width:big?30:18,height:big?26:16,fontSize:big?15:10,lineHeight:"10px",fontFamily:sysFont,cursor:"pointer",padding:0,display:"flex",alignItems:"center",justifyContent:"center",color:C.ink}) }, props.children);
 }
 function Win(props){
   var mobile = useIsMobile();
-  // Sur mobile : la fenêtre occupe tout l'écran (pas de largeur/hauteur fixe).
   var winStyle = mobile
     ? mix(bevelOut,{background:C.face,display:"flex",flexDirection:"column",width:"100%",height:"100%",flex:1,minHeight:0})
     : mix(bevelOut,{background:C.face,display:"flex",flexDirection:"column"},props.style);
@@ -272,7 +234,6 @@ function Buddy(props){
   );
 }
 
-/* ---- Liste messages + saisie ---- */
 function MessageList(props){
   var messages=props.messages, mineSender=props.mineSender;
   var mobile=useIsMobile();
@@ -328,9 +289,7 @@ function ContactStrip(props){
   );
 }
 
-/* ============================================================
-   ESPACE VISITEUR
-   ============================================================ */
+
 function VisitorApp(props){
   var goHome=props.goHome;
   var s1=useState(null), threadId=s1[0], setThreadId=s1[1];
@@ -397,9 +356,6 @@ function VisitorApp(props){
   );
 }
 
-/* ============================================================
-   ESPACE ADMIN (Bob)
-   ============================================================ */
 function AdminApp(props){
   var goHome=props.goHome;
   var s1=useState(false), authed=s1[0], setAuthed=s1[1];
@@ -478,7 +434,6 @@ function AdminApp(props){
     )
   );
 
-  // ----- MOBILE : soit la liste plein écran, soit la conversation plein écran -----
   if(mobile){
     if(active){
       return h(Center,null,
@@ -496,7 +451,6 @@ function AdminApp(props){
     );
   }
 
-  // ----- DESKTOP : liste + conversation côte à côte (inchangé) -----
   var list = h("div",{ style:mix(bevelIn,{width:210,minWidth:140,background:C.white,display:"flex",flexDirection:"column",fontFamily:sysFont}) }, listInner);
   var panel = h("div",{ style:{flex:1,display:"flex",flexDirection:"column",minWidth:0} },
     active
@@ -515,7 +469,6 @@ function AdminApp(props){
   );
 }
 
-/* Bannière d'erreur Supabase, visible à l'écran */
 function DbErrorBanner(){
   var st=useState(LAST_DB_ERROR), msg=st[0], setMsg=st[1];
   useEffect(function(){ return onDbError(setMsg); },[]);
@@ -527,7 +480,6 @@ function DbErrorBanner(){
   );
 }
 
-/* Auto-test : au chargement, vérifie qu'on peut lire la table */
 function selfTest(){
   if(!SB_READY) return;
   sb.from("messages").select("id").limit(1).then(function(r){
@@ -535,9 +487,6 @@ function selfTest(){
   }).catch(function(e){ setDbError(e); });
 }
 
-/* ============================================================
-   ACCUEIL + LAYOUT
-   ============================================================ */
 function Home(props){
   var go=props.go;
   return h(Center,null,
@@ -582,8 +531,6 @@ function App(){
   );
 }
 
-/* Composant classe : seul moyen fiable d'attraper une erreur de rendu React enfant.
-   Au lieu d'un écran blanc, affiche le message d'erreur exact. */
 var ErrorBoundary = (function(){
   function EB(p){ React.Component.call(this,p); this.state={hasError:false, error:null}; }
   EB.prototype = Object.create(React.Component.prototype);
